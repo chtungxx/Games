@@ -1,3 +1,4 @@
+[加咗Aikey.html](https://github.com/user-attachments/files/25865691/Aikey.html)
 <!DOCTYPE html>
 <html lang="zh-HK">
 <head>
@@ -17,7 +18,6 @@
 
     <style>
         body { background-color: #020617; margin: 0; font-family: sans-serif; }
-        /* 隱藏滾動條但保持可以滾動 */
         ::-webkit-scrollbar { width: 0px; background: transparent; }
     </style>
 </head>
@@ -27,7 +27,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- 內建圖示組件 (取代 lucide-react) ---
+        // --- 內建圖示組件 ---
         const Icon = ({ children, className = "w-6 h-6", fill = "none" }) => (
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill={fill} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 {children}
@@ -43,6 +43,8 @@
         const SkipForward = ({ className }) => <Icon className={className} fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></Icon>;
         const Trophy = ({ className }) => <Icon className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></Icon>;
         const HelpCircle = ({ className }) => <Icon className={className}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></Icon>;
+        const Sparkles = ({ className }) => <Icon className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M3 5h4"/><path d="M19 17v4"/><path d="M17 19h4"/></Icon>;
+        const Loader2 = ({ className }) => <Icon className={className}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></Icon>;
 
         // --- K-pop 資料庫 ---
         const KPOP_DATABASE = [
@@ -90,6 +92,17 @@
         ];
 
         const TOTAL_ROUNDS = 15;
+        // --- 新增：歌手性別/類型分類 ---
+        const ARTIST_GENDER = {
+            "Wonder Girls": "F", "SHINee": "M", "BIGBANG": "M", "TVXQ!": "M",
+            "Super Junior": "M", "Miss A": "F", "2NE1": "F", "T-ARA": "F",
+            "INFINITE": "M", "f(x)": "F", "EXO": "M", "Apink": "F", "SISTAR": "F",
+            "EXID": "F", "GFRIEND": "F", "2PM": "M", "TWICE": "F", "SEVENTEEN": "M",
+            "BTS": "M", "BTOB": "M", "DAY6": "M", "iKON": "M", "BLACKPINK": "F",
+            "TXT": "M", "Red Velvet": "F", "Stray Kids": "M", "ITZY": "F",
+            "ENHYPEN": "M", "STAYC": "F", "aespa": "F", "IVE": "F", "(G)I-DLE": "F",
+            "LE SSERAFIM": "F", "NewJeans": "F", "ILLIT": "F", "ROSÉ & Bruno Mars": "F" // 歸類為 F 以配合 Rosé 女聲混淆
+        };
 
         // --- 主程式 App ---
         function App() {
@@ -105,9 +118,23 @@
             const [options, setOptions] = useState([]); 
             const [selectedAnswer, setSelectedAnswer] = useState(null);
             const [errorMsg, setErrorMsg] = useState('');
+            const [needsInteraction, setNeedsInteraction] = useState(false); // 提示使用者點擊播放
+
+            const [trivia, setTrivia] = useState(null);
+            const [isLoadingTrivia, setIsLoadingTrivia] = useState(false);
+            const [birthdayMessage, setBirthdayMessage] = useState(null);
+            const [isLoadingMessage, setIsLoadingMessage] = useState(false);
+
+            const apiKey = "AIzaSyC34syJM7eiFh01vCJNwL82edz87adc1Cw"; // Gemini API 密鑰
 
             const audioRef = useRef(null);
             const bgMusicRef = useRef(null);
+
+            // 確保所有 URL 都是 HTTPS (避免 GitHub Pages 阻擋 mixed content)
+            const ensureHttps = (url) => {
+                if (!url) return '';
+                return url.replace('http://', 'https://');
+            };
 
             const shuffleArray = (array) => {
                 const shuffled = [...array];
@@ -118,7 +145,7 @@
                 return shuffled;
             };
 
-            const generateOptions = (correctItem, type) => {
+         const generateOptions = (correctItem, type) => {
                 let newOptions = [correctItem];
                 if (type === 'year') {
                     let validWrongYears = [];
@@ -128,8 +155,15 @@
                     validWrongYears = shuffleArray(validWrongYears).slice(0, 3);
                     newOptions.push(...validWrongYears);
                 } else {
-                    const allArtists = [...new Set(KPOP_DATABASE.map(song => song.artist))];
-                    const otherArtists = shuffleArray(allArtists.filter(a => a !== correctItem));
+                    // --- 更新：根據性別過濾選項 ---
+                    // 1. 先搵出正確答案係男 (M) 定女 (F)
+                    const targetGender = ARTIST_GENDER[correctItem] || "F"; 
+                    
+                    // 2. 喺字典入面，淨係挑選同性別嘅歌手，並排除正確答案
+                    const sameGenderArtists = Object.keys(ARTIST_GENDER).filter(a => ARTIST_GENDER[a] === targetGender && a !== correctItem);
+                    
+                    // 3. 隨機打亂，然後抽 3 個出嚟做錯誤選項
+                    const otherArtists = shuffleArray(sameGenderArtists);
                     newOptions = [correctItem, ...otherArtists.slice(0, 3)];
                 }
                 return shuffleArray(newOptions); 
@@ -141,9 +175,11 @@
                     const response = await fetch(`https://itunes.apple.com/search?term=Happy+Birthday+To+You+English&limit=1&entity=song`);
                     const data = await response.json();
                     if (data.results && data.results.length > 0) {
-                        if (!bgMusicRef.current) bgMusicRef.current = new Audio(data.results[0].previewUrl);
+                        const audioUrl = ensureHttps(data.results[0].previewUrl);
+                        if (!bgMusicRef.current) bgMusicRef.current = new Audio(audioUrl);
                         bgMusicRef.current.volume = 0.6;
-                        bgMusicRef.current.play().catch(e => console.log("Autoplay blocked:", e));
+                        // 嘗試播放，如果被阻擋只在 console 提示，不影響遊戲進行
+                        bgMusicRef.current.play().catch(e => console.log("Autoplay blocked for birthday song:", e));
                     }
                 } catch (err) { console.error("無法載入生日歌", err); }
             };
@@ -162,6 +198,7 @@
                 setPlaylist(shuffledSongs);
                 setCurrentRound(0);
                 setScore(0);
+                setBirthdayMessage(null);
                 loadNextSong(0, shuffledSongs, selectedLevel);
             };
 
@@ -172,6 +209,8 @@
                 setCurrentTrackData(null);
                 setIsPlaying(false);
                 setSelectedAnswer(null);
+                setTrivia(null);
+                setNeedsInteraction(false);
                 
                 const songMeta = currentPlaylist[roundIndex];
 
@@ -179,12 +218,12 @@
                     const response = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(songMeta.term)}&limit=1&entity=song`);
                     const data = await response.json();
 
-                    if (data.results && data.results.length > 0) {
+                    if (data.results && data.results.length > 0 && data.results[0].previewUrl) {
                         const track = data.results[0];
                         const trackData = {
                             ...songMeta,
-                            previewUrl: track.previewUrl,
-                            artworkUrl: track.artworkUrl100.replace('100x100bb', '300x300bb')
+                            previewUrl: ensureHttps(track.previewUrl),
+                            artworkUrl: ensureHttps(track.artworkUrl100).replace('100x100bb', '300x300bb')
                         };
                         setCurrentTrackData(trackData);
                         const targetAnswer = currentLevel === 1 ? trackData.year : trackData.artist;
@@ -192,25 +231,48 @@
                         setGameState('playing');
                         setCurrentRound(roundIndex + 1);
                     } else {
+                        // 如果這首歌沒有試聽，自動跳下一首
+                        console.warn(`No preview found for: ${songMeta.term}`);
                         loadNextSong(roundIndex + 1, currentPlaylist, currentLevel); 
                     }
                 } catch (err) {
-                    setErrorMsg("網絡連線發生錯誤，正在嘗試下一首...");
+                    console.error("iTunes API error:", err);
+                    setErrorMsg("載入歌曲時發生錯誤，正在嘗試下一首...");
                     setTimeout(() => loadNextSong(roundIndex + 1, currentPlaylist, currentLevel), 2000);
                 }
             };
 
             const togglePlay = () => {
                 if (audioRef.current) {
-                    if (isPlaying) audioRef.current.pause();
-                    else audioRef.current.play().catch(() => console.log("等待使用者互動"));
-                    setIsPlaying(!isPlaying);
+                    if (isPlaying) {
+                        audioRef.current.pause();
+                        setIsPlaying(false);
+                    } else {
+                        audioRef.current.play()
+                            .then(() => {
+                                setIsPlaying(true);
+                                setNeedsInteraction(false);
+                            })
+                            .catch((e) => {
+                                console.log("Play failed:", e);
+                                setNeedsInteraction(true);
+                            });
+                    }
                 }
             };
 
             useEffect(() => {
                 if (gameState === 'playing' && audioRef.current && currentTrackData) {
-                    audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+                    audioRef.current.play()
+                        .then(() => {
+                            setIsPlaying(true);
+                            setNeedsInteraction(false);
+                        })
+                        .catch((e) => {
+                            console.log("Autoplay prevented:", e);
+                            setIsPlaying(false);
+                            setNeedsInteraction(true); // 顯示提示讓使用者點擊
+                        });
                 }
             }, [gameState, currentTrackData]);
 
@@ -224,6 +286,68 @@
                 const correctAnswer = level === 1 ? currentTrackData.year : currentTrackData.artist;
                 if (answer === correctAnswer) setScore(prev => prev + 10);
                 setGameState('result');
+            };
+
+            const handleNextRound = () => {
+                loadNextSong(currentRound, playlist, level);
+            };
+
+            // 呼叫 Gemini API 獲取冷知識
+            const fetchTrivia = async () => {
+                if (!currentTrackData) return;
+                setIsLoadingTrivia(true);
+                setTrivia(null);
+                if (!apiKey) {
+                    setTimeout(() => {
+                        setTrivia("這首歌太經典了！(註：請在本地環境或支援平台設定 Gemini API Key 以獲取 AI 內容)");
+                        setIsLoadingTrivia(false);
+                    }, 1000);
+                    return;
+                }
+                try {
+                    const prompt = `介紹一下K-pop歌曲 ${currentTrackData.title} (由 ${currentTrackData.artist} 演唱)。請提供一個簡短、有趣且令人驚訝的冷知識或幕後故事。字數約50-80字，語氣要活潑幽默，適合生日派對的氣氛。使用繁體中文。`;
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "哎呀，AI 突然腦袋空白，想不出這首歌的冷知識！";
+                    setTrivia(text);
+                } catch (error) {
+                    setTrivia("AI 連線失敗，無法取得冷知識 😢");
+                } finally {
+                    setIsLoadingTrivia(false);
+                }
+            };
+
+            // 呼叫 Gemini API 獲取專屬生日祝福
+            const fetchBirthdayMessage = async () => {
+                setIsLoadingMessage(true);
+                setBirthdayMessage(null);
+                if (!apiKey) {
+                    setTimeout(() => {
+                        setBirthdayMessage("生日快樂！願你每天都像 K-pop 打歌舞台一樣閃耀！(註：請在本地環境或支援平台設定 Gemini API Key 以獲取 AI 內容)");
+                        setIsLoadingMessage(false);
+                    }, 1000);
+                    return;
+                }
+                try {
+                    const performance = score >= 120 ? "完美！K-pop 大神" : score >= 80 ? "不錯！資深粉絲" : "需要再加油";
+                    const prompt = `今天是Elaine的生日！她剛剛玩了一個K-pop猜歌遊戲（總分150分）。她的得分是 ${score} 分，表現評級是「${performance}」。請以K-pop偶像或粉絲後援會會長的角度，為她寫一段專屬的生日祝福。如果有高分，請大力稱讚她的K-pop知識；如果分數不高，請幽默地吐槽並鼓勵她多聽歌。字數約80-100字，語氣要熱情、浮誇、有趣。使用繁體中文。結尾加上「✨」。`;
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "生日快樂！願你每天都像 K-pop 打歌舞台一樣閃耀！";
+                    setBirthdayMessage(text);
+                } catch (error) {
+                    setBirthdayMessage("生日快樂！(AI 祝福連線中斷 😢)");
+                } finally {
+                    setIsLoadingMessage(false);
+                }
             };
 
             return (
@@ -320,7 +444,7 @@
                             </span>
                             </div>
 
-                            <div className="relative w-72 h-72 mb-10">
+                            <div className="relative w-72 h-72 mb-6">
                             {isPlaying && <div className="absolute inset-0 bg-pink-500 rounded-full blur-3xl opacity-20 animate-pulse"></div>}
                             <div className="relative w-full h-full rounded-full border-[8px] border-slate-800 shadow-2xl overflow-hidden bg-slate-900 flex items-center justify-center group cursor-pointer transition-transform hover:scale-105" onClick={togglePlay}>
                                 {gameState === 'playing' ? (
@@ -341,12 +465,17 @@
                                 <img src={currentTrackData.artworkUrl} className="w-full h-full object-cover" />
                                 )}
                                 {gameState === 'playing' && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm z-30 rounded-full">
+                                <div className={`absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity backdrop-blur-sm z-30 rounded-full ${needsInteraction ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                                     {isPlaying ? <Pause className="w-16 h-16 text-white" /> : <Play className="w-16 h-16 text-white ml-2" />}
                                 </div>
                                 )}
                             </div>
                             </div>
+                            
+                            {needsInteraction && gameState === 'playing' && (
+                                <p className="text-pink-400 font-bold mb-4 animate-pulse">👉 點擊唱片播放音樂 👈</p>
+                            )}
+                            {!needsInteraction && <div className="h-4 mb-4"></div>}
 
                             <audio ref={audioRef} src={currentTrackData.previewUrl} onEnded={() => setIsPlaying(false)} />
 
@@ -377,12 +506,32 @@
                                     {level === 1 ? currentTrackData.year : currentTrackData.artist}
                                 </p>
                                 </div>
-                                <div className="my-8">
+                                <div className="my-6">
                                 <p className="text-2xl font-black text-pink-400 mb-1">{currentTrackData.title}</p>
                                 <p className="text-slate-300 font-medium tracking-wide">
                                     {level === 1 ? currentTrackData.artist : currentTrackData.year}
                                 </p>
                                 </div>
+
+                                <div className="mb-8 w-full">
+                                {!trivia && !isLoadingTrivia ? (
+                                    <button onClick={fetchTrivia} className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-pink-500/50 bg-pink-500/10 text-pink-300 font-bold hover:bg-pink-500/20 transition-all text-sm shadow-md">
+                                    <Sparkles className="w-4 h-4" /> ✨ 獲取 AI 幕後冷知識
+                                    </button>
+                                ) : isLoadingTrivia ? (
+                                    <div className="w-full p-4 rounded-xl bg-slate-900/50 border border-slate-700 flex items-center justify-center gap-2 text-pink-400">
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span className="text-sm font-medium animate-pulse">AI 正在回想這首歌的八卦...</span>
+                                    </div>
+                                ) : (
+                                    <div className="w-full p-5 rounded-xl bg-slate-900 border border-pink-500/30 text-left relative animate-in zoom-in duration-300">
+                                    <Sparkles className="w-5 h-5 text-pink-400 absolute top-3 right-3 opacity-50" />
+                                    <p className="text-xs font-bold text-pink-400 mb-2 uppercase tracking-widest">AI 冷知識</p>
+                                    <p className="text-sm text-slate-300 leading-relaxed">{trivia}</p>
+                                    </div>
+                                )}
+                                </div>
+
                                 <button onClick={handleNextRound} className="w-full bg-white hover:bg-slate-200 text-slate-900 font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg text-lg tracking-widest uppercase">
                                 <SkipForward className="w-6 h-6" />
                                 {currentRound < TOTAL_ROUNDS ? "下一首 (Next)" : "查看總結 (Result)"}
@@ -410,11 +559,33 @@
                                 <span className="text-2xl font-bold text-slate-500 mb-3">/ {TOTAL_ROUNDS * 10}</span>
                             </div>
                             <div className="pt-6 border-t border-slate-800">
-                                <p className="text-xl font-black text-white">
+                                <p className="text-xl font-black text-white mb-6">
                                 {score >= 120 ? "💖 完美！真正的 K-pop 達人！" : 
                                 score >= 80 ? "✨ 很不錯！韓流骨灰級粉絲！" : 
                                 "😅 當作溫習！再挑戰一次吧！"}
                                 </p>
+                                
+                                <div className="w-full">
+                                {!birthdayMessage && !isLoadingMessage ? (
+                                    <button onClick={fetchBirthdayMessage} className="w-full group relative flex items-center justify-center py-4 rounded-2xl bg-slate-900 border border-purple-500/50 overflow-hidden transition-all hover:scale-105 active:scale-95 shadow-lg">
+                                    <div className="absolute inset-0 bg-gradient-to-r from-pink-500/20 to-purple-500/20 group-hover:opacity-100 opacity-50 transition-opacity"></div>
+                                    <div className="relative z-10 flex items-center gap-2 text-purple-300 font-bold text-lg">
+                                        <Sparkles className="w-5 h-5" /> ✨ 領取 AI 專屬生日評語
+                                    </div>
+                                    </button>
+                                ) : isLoadingMessage ? (
+                                    <div className="w-full p-6 rounded-2xl bg-slate-900 border border-purple-500/50 flex flex-col items-center justify-center gap-3 text-purple-400">
+                                    <Loader2 className="w-8 h-8 animate-spin" />
+                                    <span className="text-sm font-bold tracking-widest animate-pulse">AI 偶像正在手寫卡片...</span>
+                                    </div>
+                                ) : (
+                                    <div className="w-full p-6 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 border border-pink-500/50 shadow-[0_0_30px_rgba(236,72,153,0.2)] text-left relative animate-in zoom-in duration-500">
+                                    <Sparkles className="w-8 h-8 text-pink-400 absolute top-4 right-4 opacity-20" />
+                                    <p className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400 mb-3 tracking-widest">💌 來自 AI 的生日祝福</p>
+                                    <p className="text-base text-slate-200 leading-relaxed font-medium">{birthdayMessage}</p>
+                                    </div>
+                                )}
+                                </div>
                             </div>
                             </div>
                             <div className="flex gap-4">
